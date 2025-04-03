@@ -281,6 +281,8 @@ const updateUserAvatar = asyncHandler(async(req, res) => {
   if(!avatarLocalPath) {
     throw new APIError(400, "Avatar file is missing")
   }
+
+  // Todo: Delete old avatar
   const avatar = await uploadOnCloudinary(avatarLocalPath);
   if(!avatar.url) {
     throw new APIError(400, "Error while uploading avatar")
@@ -326,6 +328,72 @@ const updateUserCoverImage = asyncHandler(async(req, res) => {
   .json(new APIResponse(200, user, "Cover image updated successfully"))
 })
 
+const getUserChannelProfile = asyncHandler(async(req, res) => {
+  const { username } = req.params;
+  if(!username?.trim()) {
+    throw new APIError(400, "username is missing")
+  }
+  const channel = await User.aggregate([
+    {
+      $match: {
+        username: username?.toLowerCase()
+      }
+    },
+    {
+      $lookup: {
+        from: "subscription",
+        localField: "_id",
+        foreignField: "channel",
+        as: "subscribers"
+      }
+    },
+    {
+      $lookup: {
+        from: "subscription",
+        localField: "_id",
+        foreignField: "subscriber",
+        as: "subscribedTo"
+      }
+    },
+    {
+      $addFields: {
+        subscribersCount: {
+          $size: "$subscribers"
+        },
+        channelsSubscribedToCount: {
+          $size: "$subscribedTo"
+        },
+        isSubscribed: {
+          $condition: {
+            if: {$in: [req.user?._id, "$subscribers.subscriber"]},
+            then: true,
+            else: false
+          }
+        }
+      }
+    },
+    {
+      $project: {
+        fullName: 1,
+        username: 1,
+        subscribersCount: 1,
+        channelsSubscribedToCount: 1,
+        isSubscribed: 1,
+        avatar: 1,
+        coverImage: 1
+      }
+    }
+  ])
+
+  if(!channel?.length) {
+    throw new APIError(404, "channel doesn't exists")
+  }
+
+  return res
+  .status(200)
+  .json(new APIResponse(200, channel[0], "User channel fetched successfully"))
+})
+
 export { 
     registerUser, 
     loginUser, 
@@ -335,5 +403,6 @@ export {
     getCurrentUser,
     updateAccountDetails,
     updateUserAvatar,
-    updateUserCoverImage
+    updateUserCoverImage,
+    getUserChannelProfile
 };
